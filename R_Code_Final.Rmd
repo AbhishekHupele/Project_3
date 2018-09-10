@@ -1,0 +1,346 @@
+
+```{r}
+# Load Libraries
+rm(list = ls())
+# install.packages("corrgram", lib="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+# install.packages("sampling", lib="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+# install.packages("DataCombine", lib="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+# install.packages("caret", lib="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+#install.packages(c("forcats", "DataExplorer", "ggthemes","grid","gridExtra","factoextra","FactoMineR"))
+#install.packages("DataExplorer", lib="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+#install.packages("psych")
+library(psych)
+library(ggplot2)
+library(corrgram)
+library(sampling)
+library(corrgram)
+library(class)
+library(e1071)
+library(caret)
+library(DataCombine)
+library(caret)
+library(randomForest)
+library(inTrees)
+library(C50)
+library(dplyr)
+library(forcats)
+library(plyr)
+library(DataExplorer)
+library(ggthemes)
+library(grid) 
+library(gridExtra) 
+library(factoextra) 
+library(FactoMineR) 
+```
+
+
+```{r}
+# Import Data
+data = read.csv('Absenteeism_at_work_Project_csv.csv', header = TRUE) 
+train = data = data.frame(data)
+data_org=train
+# list of Columns 
+col = colnames(train)
+# list of numeric and categorical columns
+n_col = c('Transportation.expense', 'Distance.from.Residence.to.Work','Service.time', 
+         'Age', 'Work.load.Average/day ', 'Hit.target','Son','Pet', 'Weight', 'Height', 
+         'Body.mass.index','Absenteeism.time.in.hours')
+c_col = c('ID', 'Reason.for.absence', 'Month.of.absence', 'Day.of.the.week','Seasons', 'Disciplinary.failure', 
+         'Education','Social.drinker','Social.smoker')
+```
+
+```{r}
+str(train) # Work.load.Average.day is 'Factor Variable'
+train$Work.load.Average.day = as.integer(train$Work.load.Average.day)
+
+# Convert catefory variables from numeric to factor type
+for (i in c_col) {
+    train[,i]=as.factor((train[,i]))
+}
+
+numeric_index = sapply(train,is.numeric) 
+numeric_data = train[,numeric_index]
+cnames_n = colnames(numeric_data)
+
+factor_index = sapply(train, is.factor)
+factor_data = train[,factor_index]
+cnames_f = colnames(factor_data)
+```
+
+
+```{r}
+multi.hist(train[,numeric_index], main = NA, dcol = c("blue", "red"), dlty = c("solid", "solid"), bcol = "linen")
+summary(train)
+```
+```{r}
+pairs.panels(train)
+```
+
+```{r}
+# Missing Value Analysis
+# Create datframe with missing percentage
+missing_val = data.frame(apply(train,2,function(x){sum(is.na(x))}))
+# Convert row names into column
+missing_val$Columns = row.names(missing_val)
+row.names(missing_val) = NULL
+# Rename the variable name
+names(missing_val)[1] = 'missing_percentage'
+#Calculate percentage
+missing_val$missing_percentage = (missing_val$missing_percentage/nrow(missing_val))*100
+# Arrange in descending order
+missing_val = missing_val[order(-missing_val$missing_percentage),]
+#Rearranging the columns
+missing_val = missing_val[,c(2,1)]
+```
+
+```{r}
+library(DMwR)
+train = knnImputation(train, k =3)
+```
+
+
+```{r}
+summary(train)
+boxplot(train)
+```
+
+
+```{r}
+for (i in 1:length(cnames_n)){
+ assign(paste0("plot",i), ggplot(aes_string(y = (cnames_n[i]), x = "Absenteeism.time.in.hours"), data =subset(train))+
+ stat_boxplot(geom = "errorbar", width = 0.5) +
+ geom_boxplot(outlier.colour="red", fill = "blue" ,outlier.shape=18,
+ outlier.size=1, notch=FALSE) +
+ theme(legend.position="bottom")+
+ labs(y=cnames_n[i],x="Absenteeism.time.in.hours")+
+ ggtitle(paste("Box plot of responded for",cnames_n[i])))
+}
+#boxplot of outliers
+gridExtra::grid.arrange(plot1,plot2,plot3,ncol=3)
+gridExtra::grid.arrange(plot4,plot5,plot6,ncol=3)
+gridExtra::grid.arrange(plot7,plot8,plot9,ncol=3)
+gridExtra::grid.arrange(plot10,plot11,plot12,ncol=3)
+```
+
+```{r}
+for (i in cnames_f) {
+  print(i)
+  print(chisq.test(table(unlist(train[21]),unlist(train[i]))))
+}
+```
+
+```{r}
+# Capping and Flooring Outliers
+for (i in cnames_n) {
+  percentile = quantile(train[i], c(0.01, 0.99),na.rm = TRUE)
+  train[i][train[i]<percentile[1]]=percentile[1]
+  train[i][train[i]>percentile[2]]=percentile[2]
+}
+#train_deleted = subset(train, select = -c(area.code, phone.number, total.day.minutes, total.eve.minutes, total.night.minutes, total.intl.minutes))
+#numeric_index = sapply(train_deleted,is.numeric) 
+#numeric_data = train_deleted[,numeric_index]
+#cnames = colnames(numeric_data)
+```
+
+
+```{r}
+
+
+for ( i in cnames_n[1:11]) {
+  train[,i] = (train[,i] - min(train[,i]))/(max(train[,i]) - min(train[,i]))
+}
+
+```
+
+```{r}
+#install.packages("dummies", lib="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+library(dummies)
+train_t = train
+for (i in c_col[2:9]){
+  temp = data.frame(dummy(train[,i]))
+  train = cbind(train,temp)
+  train[,i] = NULL
+}
+
+```
+
+```{r}
+
+corrgram(train[-1], order = F, upper.panel = panel.pie, text.panel = panel.txt, main = 'CorrelationPlot')
+#symnum(cor(train[-1])
+high_corr =  findCorrelation(cor(train[-1]), cutoff=0.95)
+```
+
+```{r}
+#removing highly correlated columns
+new_data = train[,-c(1,high_corr)]
+new_train=cbind(train['ID'],new_data)
+test=new_train[550:740,-1]
+```
+
+
+
+```{r}
+#combining the clean data with the factor variables of original data
+#temp_train=cbind(train_t[c_col],new_data) 
+#temp_train = new_data
+#temp_train$Month.of.absence = as.numeric(temp_train$Month.of.absence)
+#new_train <- subset(temp_train, Month.of.absence <11)
+#new_test <- subset(temp_train, Month.of.absence>10)
+#new_train$Month.of.absence = as.factor(new_train$Month.of.absence)
+#new_test$Month.of.absence = as.factor(new_test$Month.of.absence)
+```
+
+```{r}
+#install.packages('DAAG')
+library(DAAG)
+#feature selection using boruta package
+install.packages("Boruta", lib="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+library(Boruta) 
+#new_train$Absenteeism.time.in.hours=log(new_train$Absenteeism.time.in.hours)
+boruta.train=Boruta(Absenteeism.time.in.hours~., data = new_train[,-1], doTrace = 2) 
+selected_features=getSelectedAttributes(boruta.train, withTentative = F)
+set.seed(123)
+#creating formula from boruta selected features 
+formula=as.formula(paste("Absenteeism.time.in.hours~",paste(selected_features,collapse = "+")))
+```
+```{r}
+# Linear Model
+# Cross-Validation
+train_control <- trainControl(method = "repeatedcv",number = 10)
+options(warn=-1)
+# Linear Model
+lm_model<- train(formula,data=new_train[1:500,-1],metric="RMSE", method="lm",trControl=train_control)
+pred=predict(lm_model,test)
+# Importance_Variable
+lm_importance <- varImp(lm_model, scale=FALSE)
+# Summary Importance
+print(lm_model)
+plot(lm_importance)
+```
+
+```{r}
+#Random Forest
+rf_model<- train(formula,data=new_train[1:550,-1], metric="RMSE",method="rf",trControl=train_control)
+pred=predict(rf_model,test)
+# summarize model
+print(rf_model)
+# plot model
+plot(rf_model)
+```
+```{r}
+#decision tree model
+dt_model<- train(formula,data=new_train[1:550,-1], metric="RMSE",method="rpart",trControl=train_control)
+pred=predict(dt_model,test)
+print(dt_model)
+# plot importance
+plot(dt_model)
+```
+
+```{r}
+print(boruta.train)
+```
+
+
+```{r}
+getSelectedAttributes(boruta.train, withTentative = F)
+boruta.df <- attStats(boruta.train)
+class(boruta.df)
+print(boruta.df)
+```
+
+
+```{r}
+# PCA, Principal component analysis
+pca_train <- train[1:550,-1] 
+pca_test <- train[551:740,-1]  
+pc_analysis <- prcomp(pca_train) 
+#outputs the mean of variables prin_comp$center
+pc_analysis$center
+pc_analysis$scale
+dim(pc_analysis$x)
+biplot(pc_analysis, scale = 0)
+```
+
+
+```{r}
+#compute standard deviation of each principal component
+std_dev <- pc_analysis$sdev
+#compute variance
+pr_var <- std_dev^2
+#proportion of variance explained
+prop_varex <- pr_var/sum(pr_var)
+#plot
+plot(prop_varex, xlab = "Principal Component",ylab = "Proportion of Variance Explained",type = "b")
+#cumulative plot
+plot(cumsum(prop_varex), xlab = "Principal Component",ylab = "Cumulative Proportion of Variance Explained",type = "b")
+```
+
+
+```{r}
+#add a training set with principal components
+train.data <- data.frame(Absenteeism.time.in.hours =pca_train$Absenteeism.time.in.hours, pc_analysis$x)
+#we are interested in first 40 PCAs as we have seen from the graph
+# and the target variable ,so in total 41(including target variable)
+train.data <- train.data[,1:41]
+
+ #transform test into PCA
+ test.data=predict(pc_analysis, newdata = pca_test)
+ test.data= as.data.frame(test.data)
+ #select the first 40 components
+ test.data=test.data[,1:40]
+```
+
+```{r}
+#linear regression
+set.seed(123)
+train_control=trainControl(method = "repeatedcv",number = 10,repeats = 6)
+pca_lm_model=train(Absenteeism.time.in.hours~.,data=train.data,metric="RMSE",method="lm",trControl=train_control)
+print(pca_lm_model)
+print(summary(pca_lm_model))
+#make prediction on test data
+pca.lm.prediction = predict(pca_lm_model, test.data)
+# absent rate in every month 2011 if same trend of absenteeism continues
+temp = data_org[551:740,-1]
+pca.lm.trend=data.frame(data_org[551:740,-1]$Month.of.absence,pca.lm.prediction)
+ggplot(pca.lm.trend, aes(x = data_org.551.740...1..Month.of.absence ,y = pca.lm.prediction) ) + geom_bar(stat ='identity',fill='blue')
+#finding RMSE on test data
+print(RMSE(pca.lm.prediction,pca_test$Absenteeism.time.in.hours))
+```
+
+
+```{r}
+#Decision tree
+set.seed(123)
+train_control = trainControl(method = "repeatedcv", number = 10, repeats = 6)
+pca_dt_model=train(Absenteeism.time.in.hours~.,data=train.data,metric="RMSE", method="rpart",tuneLength =10, trControl=train_control)
+print(pca_dt_model)
+print(summary(pca_dt_model))
+#make prediction on test data
+pca.dt.prediction = predict(pca_dt_model, test.data)
+
+# absent rate in every month 2011 if same trend of absenteeism continues 
+pca.dt.trend=data.frame(data_org[551:740,-1]$Month.of.absence,pca.dt.prediction)
+ggplot(pca.dt.trend, aes(x = data_org.551.740...1..Month.of.absence ,y = pca.dt.prediction) ) + geom_bar(stat = 'identity')
+#finding RMSE on test data
+print(RMSE(pca.dt.prediction,pca_test$Absenteeism.time.in.hours))
+```
+
+```{r}
+#Lasso regression
+#install.packages("elasticnet", lib="/Library/Frameworks/R.framework/Versions/3.4/Resources/library")
+library(elasticnet)
+set.seed(123)
+train_control = trainControl(method = "repeatedcv",number = 10,repeats = 6)
+pca_lasso_model=train(Absenteeism.time.in.hours~.,data=train.data,metric="RMSE", method="lasso",tuneLength = 10,trControl=train_control)
+print(pca_lasso_model)
+print(summary(pca_lasso_model))
+#make prediction on test data
+pca.lasso.prediction = predict(pca_lasso_model, test.data)
+# absent rate in every month 2011 if same trend of absenteeism continues
+pca.lasso.trend=data.frame(data_org[551:740,-1]$Month.of.absence,pca.lasso.prediction)
+ggplot(pca.lasso.trend, aes(x =data_org.551.740...1..Month.of.absence , y = pca.lasso.prediction) ) +geom_bar(stat = 'identity')
+#finding RMSE on test data 
+print(RMSE(pca.lasso.prediction,pca_test$Absenteeism.time.in.hours))
+```
+
